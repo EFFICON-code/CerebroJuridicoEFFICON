@@ -1,0 +1,7 @@
+openai
+pypdf2
+pillow
+pytesseract
+chromadb
+pdf2image
+python-dotenv
