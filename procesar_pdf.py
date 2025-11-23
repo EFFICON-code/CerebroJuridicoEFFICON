@@ -12,9 +12,11 @@ api_key = os.getenv("OPENAI_API_KEY")  # Usa la llave para abrir la puerta del b
 client = OpenAI(api_key=api_key)
 
 app = FastAPI()
+
 @app.get("/")
 async def root():
     return {"mensaje": "Cerebro Jurídico EFFICON listo"}
+
 def leer_pdf(nombre_archivo):
     with open(nombre_archivo, 'rb') as archivo:
         lector = PyPDF2.PdfReader(archivo)
@@ -102,25 +104,7 @@ async def procesar_pdf(file: UploadFile = File(...)):
         texto_extraido = leer_pdf(file.filename)
         texto_limpiado = limpiar_texto(texto_extraido)
         chunks = trocear_texto(texto_limpiado)
- @app.post("/buscar")
-async def buscar(query: str):
-    try:
-        embedding_pregunta = generar_embedding(query)
-        coleccion = db_client.get_collection(name="efficon_juridico")
-        resultados = coleccion.query(
-            query_embeddings=[embedding_pregunta],
-            n_results=5  # Trae 5 resultados más relevantes
-        )
-        respuesta = []
-        for i in range(len(resultados['documents'][0])):
-            resultado = {
-                "texto": resultados['documents'][0][i],
-                "metadatos": resultados['metadatas'][0][i]
-            }
-            respuesta.append(resultado)
-        return JSONResponse(content={"resultados": respuesta})
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})       
+        
         # Crea la biblioteca infinita (en nube, será persistente después)
         db_client = chromadb.PersistentClient(path="/chroma_db")
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
@@ -144,8 +128,26 @@ async def buscar(query: str):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-if __name__ == "__main__":
-    import uvicorn
+@app.post("/buscar")
+async def buscar(query: str):
+    try:
+        embedding_pregunta = generar_embedding(query)
+        coleccion = db_client.get_collection(name="efficon_juridico")
+        resultados = coleccion.query(
+            query_embeddings=[embedding_pregunta],
+            n_results=5  # Trae 5 resultados más relevantes
+        )
+        respuesta = []
+        for i in range(len(resultados['documents'][0])):
+            resultado = {
+                "texto": resultados['documents'][0][i],
+                "metadatos": resultados['metadatas'][0][i]
+            }
+            respuesta.append(resultado)
+        return JSONResponse(content={"resultados": respuesta})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
