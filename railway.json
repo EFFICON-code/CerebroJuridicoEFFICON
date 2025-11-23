@@ -1,9 +1,10 @@
 {
-  "builders": [
-    {
-      "name": "python"
-    }
-  ],
-  "buildCommand": "pip install -r requirements.txt",
-  "startCommand": "python procesar_pdf.py"
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "python procesar_pdf.py",
+    "restartPolicyType": "NEVER"
+  }
 }
