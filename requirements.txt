@@ -5,3 +5,5 @@ pytesseract
 chromadb
 pdf2image
 python-dotenv
+fastapi
+uvicorn

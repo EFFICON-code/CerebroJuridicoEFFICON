@@ -4,10 +4,14 @@ from dotenv import load_dotenv
 import os
 from openai import OpenAI
 import chromadb
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
 
 load_dotenv()  # Carga la llave secreta del cajón
 api_key = os.getenv("OPENAI_API_KEY")  # Usa la llave para abrir la puerta del bibliotecario
 client = OpenAI(api_key=api_key)
+
+app = FastAPI()
 
 def leer_pdf(nombre_archivo):
     with open(nombre_archivo, 'rb') as archivo:
@@ -85,39 +89,41 @@ def parsear_etiquetas(etiquetas_str):
             metadatos[clave.strip('- ').strip()] = valor.strip()
     return metadatos
 
-# Prueba: Cambia 'ejemplo.pdf' por el nombre de tu PDF si es diferente
-texto_extraido = leer_pdf('ejemplo.pdf')
-texto_limpiado = limpiar_texto(texto_extraido)
-chunks = trocear_texto(texto_limpiado)
+@app.post("/procesar_pdf")
+async def procesar_pdf(file: UploadFile = File(...)):
+    try:
+        # Guarda el PDF subido temporalmente
+        contents = await file.read()
+        with open(file.filename, "wb") as f:
+            f.write(contents)
+        
+        texto_extraido = leer_pdf(file.filename)
+        texto_limpiado = limpiar_texto(texto_extraido)
+        chunks = trocear_texto(texto_limpiado)
+        
+        # Crea la biblioteca infinita (en nube, será persistente después)
+        db_client = chromadb.Client()
+        coleccion = db_client.get_or_create_collection(name="efficon_juridico")
+        
+        guardados = []
+        for i, chunk in enumerate(chunks):
+            etiquetas_str = etiquetar_chunk(chunk)
+            embedding = generar_embedding(chunk)
+            metadatos = parsear_etiquetas(etiquetas_str)
+            metadatos['chunk_id'] = f"chunk_{i+1}"
+            coleccion.add(
+                documents=[chunk],
+                embeddings=[embedding],
+                metadatas=[metadatas],
+                ids=[f"id_{i+1}"]
+            )
+            guardados.append(metadatos)
+        
+        os.remove(file.filename)  # Borra el temporal
+        return JSONResponse(content={"mensaje": "PDF procesado y guardado", "metadatos": guardados})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
-# Crea la biblioteca infinita local
-db_client = chromadb.Client()
-coleccion = db_client.get_or_create_collection(name="efficon_juridico")
-
-for i, chunk in enumerate(chunks):
-    etiquetas_str = etiquetar_chunk(chunk)
-    embedding = generar_embedding(chunk)
-    metadatos = parsear_etiquetas(etiquetas_str)
-    metadatos['chunk_id'] = f"chunk_{i+1}"
-    coleccion.add(
-        documents=[chunk],
-        embeddings=[embedding],
-        metadatas=[metadatos],
-        ids=[f"id_{i+1}"]
-    )
-    print(f"Guardado chunk {i+1} con metadatos: {metadatos}")
-
-print("Todo guardado en la biblioteca infinita local.")
-# Prueba de búsqueda: Cambia la pregunta si quieres
-pregunta = "contratos públicos en Ecuador"  # Ejemplo de búsqueda
-embedding_pregunta = generar_embedding(pregunta)
-resultados = coleccion.query(
-    query_embeddings=[embedding_pregunta],
-    n_results=3  # Trae los 3 pedazos más relevantes
-)
-print("Resultados de búsqueda:")
-for i, doc in enumerate(resultados['documents'][0]):
-    print(f"Resultado {i+1}:")
-    print(doc)
-    print("Metadatos:", resultados['metadatas'][0][i])
-    print("\n")
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
