@@ -147,7 +147,20 @@ async def buscar(query: str):
         return JSONResponse(content={"resultados": respuesta})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
+@app.get("/listar_documentos")
+async def listar_documentos():
+    try:
+        db_client = chromadb.PersistentClient(path="/chroma_db")
+        coleccion = db_client.get_collection(name="efficon_juridico")
+        # Obtiene todos los metadatos únicos de "Documento"
+        all_metadatos = coleccion.get(include=["metadatas"])
+        documentos = set()
+        for meta in all_metadatos["metadatos"]:
+            if "Documento" in meta:
+                documentos.add(meta["Documento"])
+        return JSONResponse(content={"documentos_cargados": list(documentos)})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
