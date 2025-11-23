@@ -102,7 +102,25 @@ async def procesar_pdf(file: UploadFile = File(...)):
         texto_extraido = leer_pdf(file.filename)
         texto_limpiado = limpiar_texto(texto_extraido)
         chunks = trocear_texto(texto_limpiado)
-        
+ @app.post("/buscar")
+async def buscar(query: str):
+    try:
+        embedding_pregunta = generar_embedding(query)
+        coleccion = db_client.get_collection(name="efficon_juridico")
+        resultados = coleccion.query(
+            query_embeddings=[embedding_pregunta],
+            n_results=5  # Trae 5 resultados más relevantes
+        )
+        respuesta = []
+        for i in range(len(resultados['documents'][0])):
+            resultado = {
+                "texto": resultados['documents'][0][i],
+                "metadatos": resultados['metadatas'][0][i]
+            }
+            respuesta.append(resultado)
+        return JSONResponse(content={"resultados": respuesta})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})       
         # Crea la biblioteca infinita (en nube, será persistente después)
         db_client = chromadb.PersistentClient(path="/chroma_db")
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
@@ -116,7 +134,7 @@ async def procesar_pdf(file: UploadFile = File(...)):
             coleccion.add(
                 documents=[chunk],
                 embeddings=[embedding],
-                metadatas=[metadatas],
+                metadatas=[metadatos],
                 ids=[f"id_{i+1}"]
             )
             guardados.append(metadatos)
