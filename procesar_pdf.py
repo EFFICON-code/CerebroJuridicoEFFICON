@@ -12,7 +12,9 @@ api_key = os.getenv("OPENAI_API_KEY")  # Usa la llave para abrir la puerta del b
 client = OpenAI(api_key=api_key)
 
 app = FastAPI()
-
+@app.get("/")
+async def root():
+    return {"mensaje": "Cerebro Jurídico EFFICON listo"}
 def leer_pdf(nombre_archivo):
     with open(nombre_archivo, 'rb') as archivo:
         lector = PyPDF2.PdfReader(archivo)
@@ -126,4 +128,7 @@ async def procesar_pdf(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
