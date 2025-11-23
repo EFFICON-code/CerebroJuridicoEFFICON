@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import os
 from openai import OpenAI
 import chromadb
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Body
 from fastapi.responses import JSONResponse
 
 load_dotenv()  # Carga la llave secreta del cajón
@@ -129,9 +129,13 @@ async def procesar_pdf(file: UploadFile = File(...)):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.post("/buscar")
-async def buscar(query: str):
+async def buscar(body: dict = Body(...)):
     try:
+        query = body.get("query", "")
+        if not query:
+            return JSONResponse(status_code=400, content={"error": "Query is required"})
         embedding_pregunta = generar_embedding(query)
+        db_client = chromadb.PersistentClient(path="/chroma_db")
         coleccion = db_client.get_collection(name="efficon_juridico")
         resultados = coleccion.query(
             query_embeddings=[embedding_pregunta],
