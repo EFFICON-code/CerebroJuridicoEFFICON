@@ -104,7 +104,7 @@ async def procesar_pdf(file: UploadFile = File(...)):
         chunks = trocear_texto(texto_limpiado)
         
         # Crea la biblioteca infinita (en nube, será persistente después)
-        db_client = chromadb.Client()
+        db_client = chromadb.PersistentClient(path="/chroma_db")
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
         
         guardados = []
