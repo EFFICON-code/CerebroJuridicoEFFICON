@@ -1,0 +1,9 @@
+{
+  "builders": [
+    {
+      "name": "python"
+    }
+  ],
+  "buildCommand": "pip install -r requirements.txt",
+  "startCommand": "python procesar_pdf.py"
+}
