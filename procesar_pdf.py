@@ -63,9 +63,7 @@ def etiquetar_chunk(chunk):
     Analiza este fragmento de un documento legal y extrae los metadatos exactos en formato simple:
     - Documento: Nombre completo del documento o ley.
     - Tipo: Ley, Reglamento u Ordenanza.
-    - Entidad: Quién lo emitió (ej: Asamblea Nacional, Municipio).
     - Área: Tema principal (ej: Educación, Salud, Contratos).
-    - Año: Año de publicación o aprobación.
     - Tags: 3-5 palabras clave separadas por comas (ej: contratos, penalidades, derechos).
 
     Fragmento: {chunk[:500]}  # Solo los primeros 500 para no sobrecargar
@@ -141,14 +139,20 @@ async def buscar(body: dict = Body(...)):
             query_embeddings=[embedding_pregunta],
             n_results=5  # Trae 5 resultados más relevantes
         )
-        respuesta = []
+        chunks = ""
         for i in range(len(resultados['documents'][0])):
-            resultado = {
-                "texto": resultados['documents'][0][i],
-                "metadatos": resultados['metadatas'][0][i]
-            }
-            respuesta.append(resultado)
-        return JSONResponse(content={"resultados": respuesta})
+            chunks += f"Chunk {i+1}: {resultados['documents'][0][i]}\nMetadatos: {resultados['metadatas'][0][i]}\n\n"
+        prompt_razonamiento = f"""
+        Basado en esta consulta: {query}
+        Y estos chunks relevantes de normativa: {chunks}
+        Razona paso a paso, proporciona concordancias entre los chunks, argumenta cómo se aplican a la consulta, y da una respuesta coherente con justificaciones legales.
+        """
+        respuesta = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt_razonamiento}]
+        )
+        argumentacion = respuesta.choices[0].message.content.strip()
+        return JSONResponse(content={"argumentacion": argumentacion, "resultados": resultados['documents'][0]})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
