@@ -11,7 +11,7 @@ if uploaded_file is not None:
     if st.button("Procesar PDF"):
         st.info("Subiendo y procesando...")
         files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
-        response = requests.post(f"{API_URL}/procesar_pdf", files=files)
+        response = requests.post(f"{API_URL}/procesar_pdf", files=files, verify=False)
         if response.status_code == 200:
             st.success("PDF procesado exitosamente!")
             st.json(response.json())
