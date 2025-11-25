@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python procesar_pdf.py",
+
     "restartPolicyType": "NEVER"
   }
 }
