@@ -1,9 +1,6 @@
 openai
-pypdf2
-pillow
-pytesseract
+PyPDF2
 chromadb
-pdf2image
 python-dotenv
 fastapi
 uvicorn
