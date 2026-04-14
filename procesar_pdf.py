@@ -48,11 +48,10 @@ def trocear_texto(texto, tamano_min=300, tamano_max=800):
         chunks.append(' '.join(chunk_actual))
     return chunks
 
-# CORRECCIÓN 3: Leemos con la IA una SOLA VEZ por documento para ahorrar dinero y tiempo
 def etiquetar_documento_maestro(texto_inicial):
     prompt = f"""
     Analiza las primeras páginas de este documento legal y extrae los metadatos.
-    Devuelve SOLO el texto en este formato exacto (sin asteriscos ni comillas):
+    Devuelve SOLO el texto en este formato exacto:
     Documento: [Nombre completo de la ley o reglamento]
     Tipo: [Ley, Reglamento, Resolucion, Ordenanza]
     Area: [Tema principal]
@@ -61,7 +60,7 @@ def etiquetar_documento_maestro(texto_inicial):
     """
     try:
         respuesta = client.chat.completions.create(
-            model="gpt-4o-mini", # Usamos la versión mini para metadatos (más rápida y barata)
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}]
         )
         return parsear_etiquetas(respuesta.choices[0].message.content.strip())
@@ -84,7 +83,6 @@ def parsear_etiquetas(etiquetas_str):
     return metadatos
 
 @app.post("/procesar_pdf")
-# NUEVO: Recibimos el parámetro 'entidad' desde el formulario
 async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("General")):
     try:
         ruta_temp = f"temp_{file.filename}"
@@ -96,13 +94,11 @@ async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("Genera
         texto_limpiado = limpiar_texto(texto_extraido)
         chunks = trocear_texto(texto_limpiado)
         
-        # CORRECCIÓN 4: Ruta local persistente y segura
         db_client = chromadb.PersistentClient(path="./chroma_db_juridico")
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
         
-        # Sacamos los metadatos generales 1 sola vez
         metadatos_base = etiquetar_documento_maestro(texto_limpiado)
-        metadatos_base["entidad"] = entidad.strip().upper() # Etiqueta de la Institución
+        metadatos_base["entidad"] = entidad.strip().upper()
         metadatos_base["archivo"] = file.filename
         
         ids_lista = []
@@ -117,8 +113,6 @@ async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("Genera
             embeddings_lista.append(generar_embedding(chunk))
             documents_lista.append(chunk)
             metadatas_lista.append(meta_chunk)
-            
-            # CORRECCIÓN 1: ID Único a prueba de sobreescrituras
             ids_lista.append(f"{file.filename}_chunk_{i+1}")
             
         coleccion.add(
@@ -133,20 +127,16 @@ async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("Genera
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# CORRECCIÓN 2: El endpoint fantasma ya existe y devuelve los archivos
 @app.get("/listar_documentos")
 async def listar_documentos():
     try:
         db_client = chromadb.PersistentClient(path="./chroma_db_juridico")
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
-        
-        # Obtenemos los metadatos de todo lo guardado
         resultados = coleccion.get(include=["metadatas"])
         
         lista_unica = set()
         for meta in resultados.get('metadatas', []):
             if 'archivo' in meta and 'entidad' in meta:
-                # Agrupamos por Archivo y Entidad
                 lista_unica.add(f"[{meta['entidad']}] - {meta['archivo']}")
                 
         return JSONResponse(content={"documentos_cargados": sorted(list(lista_unica))})
@@ -156,12 +146,11 @@ async def listar_documentos():
 @app.post("/buscar")
 async def buscar(body: dict = Body(...)):
     try:
-        # Recibimos el prompt gigante de Excel y el texto específico para buscar
         prompt_completo = body.get("query", "")
         texto_busqueda = body.get("contexto_busqueda", prompt_completo) 
         entidad_filtro = body.get("entidad", "TODAS")
         
-        # 1. BÚSQUEDA VECTORIAL LIMPIA (Solo busca el Objeto y la Necesidad)
+        # 1. Búsqueda Vectorial
         embedding_pregunta = generar_embedding(texto_busqueda)
         db_client = chromadb.PersistentClient(path="./chroma_db_juridico")
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
@@ -172,30 +161,36 @@ async def buscar(body: dict = Body(...)):
             
         resultados = coleccion.query(
             query_embeddings=[embedding_pregunta],
-            n_results=7, # Aumentamos a 7 párrafos legales para mayor riqueza
+            n_results=7,
             where=filtro if filtro else None
         )
         
-        # 2. CONSTRUIR EL EXPEDIENTE LEGAL
+        # 2. Ensamblar Contexto
         textos_legales = ""
         if resultados and resultados['documents'] and resultados['documents'][0]:
             for i in range(len(resultados['documents'][0])):
-                archivo = resultados['metadatas'][0][i].get('archivo', 'Ley Desconocida')
+                archivo = resultados['metadatas'][0][i].get('archivo', 'Normativa')
                 textos_legales += f"\n--- EXTRAÍDO DE: {archivo} ---\n{resultados['documents'][0][i]}\n"
         
-        # 3. INYECCIÓN EXACTA EN SU EXCEL
-        # Aquí reemplazamos la llave {{Contexto_Legal_ChromaDB}} que usted puso en la celda B188
+        # 3. Inyección en el Prompt
         if "{{Contexto_Legal_ChromaDB}}" in prompt_completo:
             prompt_final = prompt_completo.replace("{{Contexto_Legal_ChromaDB}}", textos_legales)
         else:
             prompt_final = f"{prompt_completo}\n\nCONTEXTO LEGAL ESTRICTO:\n{textos_legales}"
             
-        # 4. LLAMADA A LA IA CON MODO "JUEZ ESTRICTO" (Cero Alucinaciones)
+        # 4. Prompt de Sistema (El Fallback Elegante)
+        instruccion_sistema = """
+        Eres un abogado experto en contratación pública en Ecuador. Redactas informes de necesidad para instituciones del Estado.
+        Regla 1: Basa tu argumentación en el CONTEXTO LEGAL ESTRICTO provisto.
+        Regla 2: Si el contexto legal está vacío o es insuficiente para justificar el objeto de contratación, redacta la justificación en los mismos 3 párrafos formales, pero basándote en los principios generales del derecho administrativo ecuatoriano (eficiencia, eficacia, necesidad pública, servicio a la comunidad) y la misión general de la entidad. Utiliza un lenguaje institucional impecable.
+        Regla 3: NUNCA, bajo ninguna circunstancia, insertes advertencias, notas de error, ni frases como 'no encontré información', 'no hay artículos' o 'el contexto no menciona'. El texto resultante irá impreso directamente en un informe oficial y debe lucir siempre como una redacción jurídica perfecta y terminada.
+        """
+
         respuesta = client.chat.completions.create(
             model="gpt-4o",
-            temperature=0.0, # 0.0 SIGNIFICA: NO INVENTES NADA, SOLO USA LOS HECHOS
+            temperature=0.1, # Muy bajo para evitar desvaríos, pero permite redactar fluidamente
             messages=[
-                {"role": "system", "content": "Eres un asistente jurídico implacable. Tu regla de oro absoluta es NUNCA inventar leyes, artículos, resoluciones ni normativas que no estén textualmente en el contexto provisto. Si el contexto provisto está vacío o no contiene información suficiente para justificar la contratación, DEBES responder exactamente con esta frase: 'ADVERTENCIA: No se encontró normativa cargada en el sistema para justificar este proceso.' No completes con conocimiento externo."},
+                {"role": "system", "content": instruccion_sistema},
                 {"role": "user", "content": prompt_final}
             ]
         )
@@ -206,3 +201,8 @@ async def buscar(body: dict = Body(...)):
         })
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
