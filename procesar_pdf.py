@@ -156,54 +156,53 @@ async def listar_documentos():
 @app.post("/buscar")
 async def buscar(body: dict = Body(...)):
     try:
-        query = body.get("query", "")
-        entidad_filtro = body.get("entidad", "TODAS") # NUEVO: Filtro por Entidad
+        # Recibimos el prompt gigante de Excel y el texto específico para buscar
+        prompt_completo = body.get("query", "")
+        texto_busqueda = body.get("contexto_busqueda", prompt_completo) 
+        entidad_filtro = body.get("entidad", "TODAS")
         
-        if not query:
-            return JSONResponse(status_code=400, content={"error": "Falta la consulta"})
-            
-        embedding_pregunta = generar_embedding(query)
+        # 1. BÚSQUEDA VECTORIAL LIMPIA (Solo busca el Objeto y la Necesidad)
+        embedding_pregunta = generar_embedding(texto_busqueda)
         db_client = chromadb.PersistentClient(path="./chroma_db_juridico")
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
         
-        # Filtramos la base de datos por Entidad si el usuario eligió una
         filtro = {}
         if entidad_filtro != "TODAS":
             filtro = {"entidad": entidad_filtro.strip().upper()}
             
         resultados = coleccion.query(
             query_embeddings=[embedding_pregunta],
-            n_results=5,
+            n_results=7, # Aumentamos a 7 párrafos legales para mayor riqueza
             where=filtro if filtro else None
         )
         
-        chunks = ""
-        for i in range(len(resultados['documents'][0])):
-            chunks += f"Documento: {resultados['metadatas'][0][i].get('archivo')}\nTexto: {resultados['documents'][0][i]}\n\n"
-            
-        prompt_razonamiento = f"""
-        Eres EFFICON, un experto asesor jurídico en contratación pública y leyes de Ecuador.
-        Consulta del usuario: {query}
-        Contexto legal encontrado: {chunks}
+        # 2. CONSTRUIR EL EXPEDIENTE LEGAL
+        textos_legales = ""
+        if resultados and resultados['documents'] and resultados['documents'][0]:
+            for i in range(len(resultados['documents'][0])):
+                archivo = resultados['metadatas'][0][i].get('archivo', 'Ley Desconocida')
+                textos_legales += f"\n--- EXTRAÍDO DE: {archivo} ---\n{resultados['documents'][0][i]}\n"
         
-        Reglas:
-        1. Responde de forma ejecutiva, formal y directa.
-        2. Cita el nombre del documento donde encontraste la respuesta.
-        3. Si la respuesta no está en el contexto, dilo claramente. No inventes artículos.
-        """
+        # 3. INYECCIÓN EXACTA EN SU EXCEL
+        # Aquí reemplazamos la llave {{Contexto_Legal_ChromaDB}} que usted puso en la celda B188
+        if "{{Contexto_Legal_ChromaDB}}" in prompt_completo:
+            prompt_final = prompt_completo.replace("{{Contexto_Legal_ChromaDB}}", textos_legales)
+        else:
+            prompt_final = f"{prompt_completo}\n\nCONTEXTO LEGAL ESTRICTO:\n{textos_legales}"
+            
+        # 4. LLAMADA A LA IA CON MODO "JUEZ ESTRICTO" (Cero Alucinaciones)
         respuesta = client.chat.completions.create(
             model="gpt-4o",
-            messages=[{"role": "user", "content": prompt_razonamiento}]
+            temperature=0.0, # 0.0 SIGNIFICA: NO INVENTES NADA, SOLO USA LOS HECHOS
+            messages=[
+                {"role": "system", "content": "Eres un asistente jurídico implacable. Tu regla de oro absoluta es NUNCA inventar leyes, artículos, resoluciones ni normativas que no estén textualmente en el contexto provisto. Si el contexto provisto está vacío o no contiene información suficiente para justificar la contratación, DEBES responder exactamente con esta frase: 'ADVERTENCIA: No se encontró normativa cargada en el sistema para justificar este proceso.' No completes con conocimiento externo."},
+                {"role": "user", "content": prompt_final}
+            ]
         )
         
         return JSONResponse(content={
             "argumentacion": respuesta.choices[0].message.content.strip(),
-            "archivos_consultados": resultados['metadatas'][0]
+            "archivos_consultados": resultados['metadatas'][0] if resultados.get('metadatas') else []
         })
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
