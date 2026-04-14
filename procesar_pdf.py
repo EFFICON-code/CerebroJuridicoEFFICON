@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
+# Asumiendo que está usando el wrapper de OpenAI para Gemini 2.5 Flash
 client = OpenAI(api_key=api_key)
 
 app = FastAPI(title="Cerebro Jurídico EFFICON")
@@ -60,7 +61,7 @@ def etiquetar_documento_maestro(texto_inicial):
     """
     try:
         respuesta = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gemini-2.5-flash", 
             messages=[{"role": "user", "content": prompt}]
         )
         return parsear_etiquetas(respuesta.choices[0].message.content.strip())
@@ -150,7 +151,6 @@ async def buscar(body: dict = Body(...)):
         texto_busqueda = body.get("contexto_busqueda", prompt_completo) 
         entidad_filtro = body.get("entidad", "TODAS")
         
-        # 1. Búsqueda Vectorial
         embedding_pregunta = generar_embedding(texto_busqueda)
         db_client = chromadb.PersistentClient(path="./chroma_db_juridico")
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
@@ -165,30 +165,27 @@ async def buscar(body: dict = Body(...)):
             where=filtro if filtro else None
         )
         
-        # 2. Ensamblar Contexto
         textos_legales = ""
         if resultados and resultados['documents'] and resultados['documents'][0]:
             for i in range(len(resultados['documents'][0])):
                 archivo = resultados['metadatas'][0][i].get('archivo', 'Normativa')
                 textos_legales += f"\n--- EXTRAÍDO DE: {archivo} ---\n{resultados['documents'][0][i]}\n"
         
-        # 3. Inyección en el Prompt
         if "{{Contexto_Legal_ChromaDB}}" in prompt_completo:
             prompt_final = prompt_completo.replace("{{Contexto_Legal_ChromaDB}}", textos_legales)
         else:
             prompt_final = f"{prompt_completo}\n\nCONTEXTO LEGAL ESTRICTO:\n{textos_legales}"
             
-        # 4. Prompt de Sistema (El Fallback Elegante)
         instruccion_sistema = """
-        Eres un abogado experto en contratación pública en Ecuador. Redactas informes de necesidad para instituciones del Estado.
+        Eres un abogado experto en contratación pública en Ecuador. Redactas informes de necesidad.
         Regla 1: Basa tu argumentación en el CONTEXTO LEGAL ESTRICTO provisto.
-        Regla 2: Si el contexto legal está vacío o es insuficiente para justificar el objeto de contratación, redacta la justificación en los mismos 3 párrafos formales, pero basándote en los principios generales del derecho administrativo ecuatoriano (eficiencia, eficacia, necesidad pública, servicio a la comunidad) y la misión general de la entidad. Utiliza un lenguaje institucional impecable.
-        Regla 3: NUNCA, bajo ninguna circunstancia, insertes advertencias, notas de error, ni frases como 'no encontré información', 'no hay artículos' o 'el contexto no menciona'. El texto resultante irá impreso directamente en un informe oficial y debe lucir siempre como una redacción jurídica perfecta y terminada.
+        Regla 2: Si el contexto legal está vacío, redacta usando principios generales, sin inventar artículos.
+        Regla 3: NUNCA insertes advertencias de error en la redacción final.
         """
 
         respuesta = client.chat.completions.create(
-            model="gpt-4o",
-            temperature=0.1, # Muy bajo para evitar desvaríos, pero permite redactar fluidamente
+            model="gemini-2.5-flash",
+            temperature=0.1,
             messages=[
                 {"role": "system", "content": instruccion_sistema},
                 {"role": "user", "content": prompt_final}
@@ -197,7 +194,8 @@ async def buscar(body: dict = Body(...)):
         
         return JSONResponse(content={
             "argumentacion": respuesta.choices[0].message.content.strip(),
-            "archivos_consultados": resultados['metadatas'][0] if resultados.get('metadatas') else []
+            "archivos_consultados": resultados['metadatas'][0] if resultados.get('metadatas') else [],
+            "textos_crudos_chromadb": textos_legales # <--- LA PRUEBA IRREFUTABLE
         })
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
