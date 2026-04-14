@@ -6,3 +6,6 @@ chromadb
 PyPDF2
 python-dotenv
 google-generativeai
+streamlit
+requests
+urllib3
