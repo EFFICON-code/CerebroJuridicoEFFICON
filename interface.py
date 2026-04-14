@@ -9,7 +9,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 API_URL = "https://cerebrojuridicoefficon-production.up.railway.app"  
 
 st.set_page_config(page_title="EFFICON Jurídico", layout="wide", page_icon="⚖️")
-st.title("⚖️ EFFICON - Gestor de Normativa Multientidad")
+st.title("⚖️ EFFICON - GESTOR DE NORMATIVA MULTIENTIDAD")
 
 tab1, tab2, tab3 = st.tabs(["📥 1. Inyectar Normativa (Clasificada)", "💬 2. Chat de Prueba", "🔍 3. MODO AUDITOR (Rayos X)"])
 
@@ -35,21 +35,23 @@ with tab1:
         
         st.markdown("---")
         
-        # 2. Lógica dinámica de etiquetas
+        # 2. Lógica dinámica de etiquetas (CORREGIDA CON KEYS ÚNICOS)
         etiqueta_final = ""
         
         if "GENERAL" in tipo_alcance:
-            st.info("📌 Esta normativa se guardará en la gaveta **NACIONAL**. Se usará como base para todos los informes.")
+            st.info("📌 Esta normativa se guardará en la gaveta NACIONAL. Se usará como base para todos los informes.")
             etiqueta_final = "NACIONAL"
             
         elif "SECTORIAL" in tipo_alcance:
             st.info("📌 Guardaremos esto para un grupo. Ejemplos válidos: GAD, BOMBEROS, HOSPITALES, MINISTERIOS.")
-            sector_input = st.text_input("Escriba el Tipo de Entidad (Sector):", placeholder="Ej: BOMBEROS")
+            # AÑADIMOS key="input_sector" PARA EVITAR EL ERROR ROJO
+            sector_input = st.text_input("Escriba el Tipo de Entidad (Sector):", placeholder="Ej: BOMBEROS", key="input_sector")
             etiqueta_final = sector_input.strip().upper()
             
         elif "INTERNA" in tipo_alcance:
             st.info("📌 Guardaremos esto como regla local. Debe coincidir exactamente con el nombre de su cliente en Excel.")
-            institucion_input = st.text_input("Escriba el Nombre Exacto de la Institución:", placeholder="Ej: MUNICIPIO LOJA")
+            # AÑADIMOS key="input_interna" PARA EVITAR EL ERROR ROJO
+            institucion_input = st.text_input("Escriba el Nombre Exacto de la Institución:", placeholder="Ej: MUNICIPIO LOJA", key="input_interna")
             etiqueta_final = institucion_input.strip().upper()
 
         uploaded_file = st.file_uploader("Sube el documento legal (PDF)", type="pdf")
