@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
-# Asumiendo que está usando el wrapper de OpenAI para Gemini 2.5 Flash
 client = OpenAI(api_key=api_key)
 
 app = FastAPI(title="Cerebro Jurídico EFFICON")
@@ -61,7 +60,7 @@ def etiquetar_documento_maestro(texto_inicial):
     """
     try:
         respuesta = client.chat.completions.create(
-            model="gemini-2.5-flash", 
+            model="gpt-4o-mini", # <--- RESTAURADO A OPENAI
             messages=[{"role": "user", "content": prompt}]
         )
         return parsear_etiquetas(respuesta.choices[0].message.content.strip())
@@ -184,7 +183,7 @@ async def buscar(body: dict = Body(...)):
         """
 
         respuesta = client.chat.completions.create(
-            model="gemini-2.5-flash",
+            model="gpt-4o", # <--- RESTAURADO A OPENAI
             temperature=0.1,
             messages=[
                 {"role": "system", "content": instruccion_sistema},
@@ -195,7 +194,7 @@ async def buscar(body: dict = Body(...)):
         return JSONResponse(content={
             "argumentacion": respuesta.choices[0].message.content.strip(),
             "archivos_consultados": resultados['metadatas'][0] if resultados.get('metadatas') else [],
-            "textos_crudos_chromadb": textos_legales # <--- LA PRUEBA IRREFUTABLE
+            "textos_crudos_chromadb": textos_legales
         })
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
