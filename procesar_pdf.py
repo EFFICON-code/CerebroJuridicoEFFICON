@@ -156,33 +156,46 @@ async def buscar(body: dict = Body(...)):
     try:
         prompt_completo = body.get("query", "")
         texto_busqueda = body.get("contexto_busqueda", prompt_completo) 
-        entidad_filtro = body.get("entidad", "TODAS")
+        
+        # --- CAPTURA DE VARIABLES (LAS 3 CAPAS) ---
+        entidad_especifica = body.get("entidad", "").strip().upper()
+        tipo_entidad = body.get("tipo_entidad", "").strip().upper()
         
         # 1. BÚSQUEDA VECTORIAL (El Bibliotecario - OpenAI)
         embedding_pregunta = generar_embedding(texto_busqueda)
         db_client = chromadb.PersistentClient(path=DB_PATH)
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
         
-        filtro = {}
-        if entidad_filtro != "TODAS":
-            filtro = {"entidad": entidad_filtro.strip().upper()}
+        # --- LA MAGIA DE LA JERARQUÍA ---
+        # Siempre incluimos la capa NACIONAL por defecto
+        lista_busqueda = ["NACIONAL"]
+        
+        if tipo_entidad and tipo_entidad != "TODAS":
+            lista_busqueda.append(tipo_entidad)
+            
+        if entidad_especifica and entidad_especifica != "TODAS":
+            lista_busqueda.append(entidad_especifica)
+            
+        filtro = {"entidad": {"$in": lista_busqueda}}
             
         resultados = coleccion.query(
             query_embeddings=[embedding_pregunta],
-            n_results=7,
-            where=filtro if filtro else None
+            n_results=12, # Aumentamos a 12 para extraer de las 3 gavetas simultáneamente
+            where=filtro
         )
         
-        # --- EL CHIVATO DE LOGS ---
+        # --- EL CHIVATO DE LOGS ACTUALIZADO ---
         cantidad = len(resultados['documents'][0]) if resultados and resultados['documents'] and resultados['documents'][0] else 0
-        print(f"🕵️ AUDITORÍA DE CHUNKS -> Entidad buscada: '{entidad_filtro}' | Chunks extraídos de la BD: {cantidad}")
+        print(f"🕵️ AUDITORÍA DE CHUNKS -> Gavetas abiertas: {lista_busqueda} | Chunks extraídos: {cantidad}")
         # --------------------------
         
         textos_legales = ""
         if resultados and resultados['documents'] and resultados['documents'][0]:
             for i in range(len(resultados['documents'][0])):
                 archivo = resultados['metadatas'][0][i].get('archivo', 'Normativa')
-                textos_legales += f"\n--- EXTRAÍDO DE: {archivo} ---\n{resultados['documents'][0][i]}\n"
+                capa_origen = resultados['metadatas'][0][i].get('entidad', 'Desconocida')
+                # Le decimos a la IA de qué gaveta vino cada artículo para que respete la jerarquía
+                textos_legales += f"\n--- EXTRAÍDO DE: {archivo} (NIVEL: {capa_origen}) ---\n{resultados['documents'][0][i]}\n"
         
         if "{{Contexto_Legal_ChromaDB}}" in prompt_completo:
             prompt_final = prompt_completo.replace("{{Contexto_Legal_ChromaDB}}", textos_legales)
@@ -193,7 +206,8 @@ async def buscar(body: dict = Body(...)):
         Eres un abogado experto en contratación pública en Ecuador. Redactas informes de necesidad.
         Regla 1: Basa tu argumentación en el CONTEXTO LEGAL ESTRICTO provisto.
         Regla 2: Si el contexto legal está vacío, redacta usando principios generales, sin inventar artículos.
-        Regla 3: NUNCA insertes advertencias de error en la redacción final.
+        Regla 3: Respeta la jerarquía de la ley (Nacional > Tipo de Entidad > Entidad Local).
+        Regla 4: NUNCA insertes advertencias de error en la redacción final.
         """
         
         prompt_gemini = f"INSTRUCCIONES DE SISTEMA:\n{instruccion_sistema}\n\nSOLICITUD DEL USUARIO:\n{prompt_final}"
