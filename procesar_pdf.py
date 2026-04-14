@@ -6,16 +6,25 @@ from openai import OpenAI
 import chromadb
 from fastapi import FastAPI, UploadFile, File, Form, Body
 from fastapi.responses import JSONResponse
+import google.generativeai as genai
 
 load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=api_key)
 
-app = FastAPI(title="Cerebro Jurídico EFFICON")
+# 1. CONFIGURACIÓN OPENAI (Solo para buscar en el disco duro actual)
+openai_api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=openai_api_key)
+
+# 2. CONFIGURACIÓN GOOGLE GEMINI (Para la redacción a máxima velocidad)
+google_api_key = os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=google_api_key)
+# Cargamos el motor Flash
+gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+
+app = FastAPI(title="Cerebro Jurídico EFFICON - Gemini Flash")
 
 @app.get("/")
 async def root():
-    return {"mensaje": "Cerebro Jurídico EFFICON listo y operando"}
+    return {"mensaje": "Cerebro Jurídico EFFICON listo con Gemini 2.5 Flash"}
 
 def leer_pdf(ruta_archivo):
     with open(ruta_archivo, 'rb') as archivo:
@@ -59,15 +68,14 @@ def etiquetar_documento_maestro(texto_inicial):
     Fragmento: {texto_inicial[:1500]}
     """
     try:
-        respuesta = client.chat.completions.create(
-            model="gpt-4o-mini", # <--- RESTAURADO A OPENAI
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return parsear_etiquetas(respuesta.choices[0].message.content.strip())
+        # Usamos Gemini para analizar el PDF rápido al subirlo
+        respuesta = gemini_model.generate_content(prompt)
+        return parsear_etiquetas(respuesta.text.strip())
     except Exception:
         return {"Documento": "Desconocido", "Tipo": "Desconocido", "Area": "Desconocida"}
 
 def generar_embedding(chunk):
+    # Usamos OpenAI para que coincida con su disco duro ChromaDB
     respuesta = client.embeddings.create(
         model="text-embedding-3-small",
         input=chunk
@@ -150,6 +158,7 @@ async def buscar(body: dict = Body(...)):
         texto_busqueda = body.get("contexto_busqueda", prompt_completo) 
         entidad_filtro = body.get("entidad", "TODAS")
         
+        # 1. BÚSQUEDA VECTORIAL (El Bibliotecario - OpenAI)
         embedding_pregunta = generar_embedding(texto_busqueda)
         db_client = chromadb.PersistentClient(path="./chroma_db_juridico")
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
@@ -163,6 +172,11 @@ async def buscar(body: dict = Body(...)):
             n_results=7,
             where=filtro if filtro else None
         )
+        
+        # --- EL CHIVATO DE LOGS ---
+        cantidad = len(resultados['documents'][0]) if resultados and resultados['documents'] and resultados['documents'][0] else 0
+        print(f"🕵️ AUDITORÍA DE CHUNKS -> Entidad buscada: '{entidad_filtro}' | Chunks extraídos de la BD: {cantidad}")
+        # --------------------------
         
         textos_legales = ""
         if resultados and resultados['documents'] and resultados['documents'][0]:
@@ -181,18 +195,17 @@ async def buscar(body: dict = Body(...)):
         Regla 2: Si el contexto legal está vacío, redacta usando principios generales, sin inventar artículos.
         Regla 3: NUNCA insertes advertencias de error en la redacción final.
         """
+        
+        prompt_gemini = f"INSTRUCCIONES DE SISTEMA:\n{instruccion_sistema}\n\nSOLICITUD DEL USUARIO:\n{prompt_final}"
 
-        respuesta = client.chat.completions.create(
-            model="gpt-4o", # <--- RESTAURADO A OPENAI
-            temperature=0.1,
-            messages=[
-                {"role": "system", "content": instruccion_sistema},
-                {"role": "user", "content": prompt_final}
-            ]
+        # 2. REDACCIÓN Y RAZONAMIENTO (El Abogado - Gemini 2.5 Flash)
+        respuesta = gemini_model.generate_content(
+            prompt_gemini,
+            generation_config=genai.types.GenerationConfig(temperature=0.1) # Baja temperatura para que sea estricto
         )
         
         return JSONResponse(content={
-            "argumentacion": respuesta.choices[0].message.content.strip(),
+            "argumentacion": respuesta.text.strip(),
             "archivos_consultados": resultados['metadatas'][0] if resultados.get('metadatas') else [],
             "textos_crudos_chromadb": textos_legales
         })
