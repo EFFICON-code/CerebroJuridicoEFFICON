@@ -10,15 +10,17 @@ import google.generativeai as genai
 
 load_dotenv()
 
-# 1. CONFIGURACIÓN OPENAI (Solo para buscar en el disco duro actual)
+# 1. CONFIGURACIÓN OPENAI (Para la Búsqueda Matemática Vectorial)
 openai_api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=openai_api_key)
 
-# 2. CONFIGURACIÓN GOOGLE GEMINI (Para la redacción a máxima velocidad)
+# 2. CONFIGURACIÓN GOOGLE GEMINI (Para la Redacción Ultra Rápida)
 google_api_key = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=google_api_key)
-# Cargamos el motor Flash
 gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+
+# 3. RUTA DEL DISCO DURO (El Volumen de Railway)
+DB_PATH = "/app/chroma_db_juridico"
 
 app = FastAPI(title="Cerebro Jurídico EFFICON - Gemini Flash")
 
@@ -68,14 +70,12 @@ def etiquetar_documento_maestro(texto_inicial):
     Fragmento: {texto_inicial[:1500]}
     """
     try:
-        # Usamos Gemini para analizar el PDF rápido al subirlo
         respuesta = gemini_model.generate_content(prompt)
         return parsear_etiquetas(respuesta.text.strip())
     except Exception:
         return {"Documento": "Desconocido", "Tipo": "Desconocido", "Area": "Desconocida"}
 
 def generar_embedding(chunk):
-    # Usamos OpenAI para que coincida con su disco duro ChromaDB
     respuesta = client.embeddings.create(
         model="text-embedding-3-small",
         input=chunk
@@ -102,7 +102,7 @@ async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("Genera
         texto_limpiado = limpiar_texto(texto_extraido)
         chunks = trocear_texto(texto_limpiado)
         
-        db_client = chromadb.PersistentClient(path="./chroma_db_juridico")
+        db_client = chromadb.PersistentClient(path=DB_PATH)
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
         
         metadatos_base = etiquetar_documento_maestro(texto_limpiado)
@@ -138,7 +138,7 @@ async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("Genera
 @app.get("/listar_documentos")
 async def listar_documentos():
     try:
-        db_client = chromadb.PersistentClient(path="./chroma_db_juridico")
+        db_client = chromadb.PersistentClient(path=DB_PATH)
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
         resultados = coleccion.get(include=["metadatas"])
         
@@ -160,7 +160,7 @@ async def buscar(body: dict = Body(...)):
         
         # 1. BÚSQUEDA VECTORIAL (El Bibliotecario - OpenAI)
         embedding_pregunta = generar_embedding(texto_busqueda)
-        db_client = chromadb.PersistentClient(path="./chroma_db_juridico")
+        db_client = chromadb.PersistentClient(path=DB_PATH)
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
         
         filtro = {}
@@ -201,7 +201,7 @@ async def buscar(body: dict = Body(...)):
         # 2. REDACCIÓN Y RAZONAMIENTO (El Abogado - Gemini 2.5 Flash)
         respuesta = gemini_model.generate_content(
             prompt_gemini,
-            generation_config=genai.types.GenerationConfig(temperature=0.1) # Baja temperatura para que sea estricto
+            generation_config=genai.types.GenerationConfig(temperature=0.1)
         )
         
         return JSONResponse(content={
