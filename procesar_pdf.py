@@ -14,19 +14,23 @@ load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=openai_api_key)
 
-# 2. CONFIGURACIÓN GOOGLE GEMINI (Para la Redacción Ultra Rápida)
+# 2. CONFIGURACIÓN GOOGLE GEMINI (Doble Motor)
 google_api_key = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=google_api_key)
-gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+
+# Motor 1: Ultra rápido y económico para extraer metadatos iniciales
+gemini_model_flash = genai.GenerativeModel('gemini-2.5-flash')
+# Motor 2: Nivel Dios en razonamiento para el análisis jurídico, acatamiento XML y prevención de alucinaciones
+gemini_model_pro = genai.GenerativeModel('gemini-1.5-pro')
 
 # 3. RUTA DEL DISCO DURO (El Volumen de Railway)
 DB_PATH = "/app/chroma_db_juridico"
 
-app = FastAPI(title="Cerebro Jurídico EFFICON - Gemini Flash")
+app = FastAPI(title="Cerebro Jurídico EFFICON - Arquitectura XML Estricta")
 
 @app.get("/")
 async def root():
-    return {"mensaje": "Cerebro Jurídico EFFICON listo con Gemini 2.5 Flash"}
+    return {"mensaje": "Cerebro Jurídico EFFICON listo y blindado contra alucinaciones"}
 
 def leer_pdf(ruta_archivo):
     with open(ruta_archivo, 'rb') as archivo:
@@ -43,20 +47,23 @@ def limpiar_texto(texto):
     texto = re.sub(r'\s+', ' ', texto)
     return texto.strip()
 
-def trocear_texto(texto, tamano_min=300, tamano_max=800):
+def trocear_texto(texto, tamano_max=1000):
+    # Nivel Dios: Chunking Semántico Legal
+    # Evita cortar artículos por la mitad separando estrictamente por párrafos reales
+    parrafos = re.split(r'\n\n+', texto)
     chunks = []
-    palabras = texto.split()
-    chunk_actual = []
-    conteo_actual = 0
-    for palabra in palabras:
-        chunk_actual.append(palabra)
-        conteo_actual += len(palabra) + 1
-        if conteo_actual >= tamano_max:
-            chunks.append(' '.join(chunk_actual))
-            chunk_actual = []
-            conteo_actual = 0
-    if chunk_actual:
-        chunks.append(' '.join(chunk_actual))
+    chunk_actual = ""
+    
+    for parrafo in parrafos:
+        if len(chunk_actual) + len(parrafo) < tamano_max:
+            chunk_actual += parrafo + "\n\n"
+        else:
+            if chunk_actual.strip():
+                chunks.append(chunk_actual.strip())
+            chunk_actual = parrafo + "\n\n"
+            
+    if chunk_actual.strip():
+        chunks.append(chunk_actual.strip())
     return chunks
 
 def etiquetar_documento_maestro(texto_inicial):
@@ -70,7 +77,8 @@ def etiquetar_documento_maestro(texto_inicial):
     Fragmento: {texto_inicial[:1500]}
     """
     try:
-        respuesta = gemini_model.generate_content(prompt)
+        # Flash es perfecto para esta tarea simple de extracción
+        respuesta = gemini_model_flash.generate_content(prompt)
         return parsear_etiquetas(respuesta.text.strip())
     except Exception:
         return {"Documento": "Desconocido", "Tipo": "Desconocido", "Area": "Desconocida"}
@@ -100,6 +108,8 @@ async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("Genera
         
         texto_extraido = leer_pdf(ruta_temp)
         texto_limpiado = limpiar_texto(texto_extraido)
+        
+        # Uso del nuevo Chunking Semántico
         chunks = trocear_texto(texto_limpiado)
         
         db_client = chromadb.PersistentClient(path=DB_PATH)
@@ -166,8 +176,6 @@ async def buscar(body: dict = Body(...)):
         db_client = chromadb.PersistentClient(path=DB_PATH)
         coleccion = db_client.get_or_create_collection(name="efficon_juridico")
         
-        # --- LA MAGIA DE LA JERARQUÍA ---
-        # Siempre incluimos la capa NACIONAL por defecto
         lista_busqueda = ["NACIONAL"]
         
         if tipo_entidad and tipo_entidad != "TODAS":
@@ -180,48 +188,77 @@ async def buscar(body: dict = Body(...)):
             
         resultados = coleccion.query(
             query_embeddings=[embedding_pregunta],
-            n_results=12, # Aumentamos a 12 para extraer de las 3 gavetas simultáneamente
+            n_results=15, # Ampliado para capturar de las 3 gavetas con seguridad
             where=filtro
         )
         
-        # --- EL CHIVATO DE LOGS ACTUALIZADO ---
         cantidad = len(resultados['documents'][0]) if resultados and resultados['documents'] and resultados['documents'][0] else 0
         print(f"🕵️ AUDITORÍA DE CHUNKS -> Gavetas abiertas: {lista_busqueda} | Chunks extraídos: {cantidad}")
-        # --------------------------
         
-        textos_legales = ""
+        # --- ORDENAMIENTO JERÁRQUICO Y ESTRUCTURACIÓN XML ---
+        textos_nacionales = []
+        textos_sectoriales = []
+        textos_locales = []
+
         if resultados and resultados['documents'] and resultados['documents'][0]:
             for i in range(len(resultados['documents'][0])):
                 archivo = resultados['metadatas'][0][i].get('archivo', 'Normativa')
                 capa_origen = resultados['metadatas'][0][i].get('entidad', 'Desconocida')
-                # Le decimos a la IA de qué gaveta vino cada artículo para que respete la jerarquía
-                textos_legales += f"\n--- EXTRAÍDO DE: {archivo} (NIVEL: {capa_origen}) ---\n{resultados['documents'][0][i]}\n"
+                texto_chunk = resultados['documents'][0][i]
+                
+                # Clasificamos el chunk en su respectiva gaveta virtual
+                if capa_origen == "NACIONAL":
+                    textos_nacionales.append(f"<documento origen='{archivo}'>\n{texto_chunk}\n</documento>")
+                elif capa_origen == tipo_entidad:
+                    textos_sectoriales.append(f"<documento origen='{archivo}'>\n{texto_chunk}\n</documento>")
+                else:
+                    textos_locales.append(f"<documento origen='{archivo}'>\n{texto_chunk}\n</documento>")
+
+        # Ensamblamos el XML dando prioridad a la normativa de la entidad específica
+        textos_legales_xml = "<marco_legal>\n"
+        if textos_locales:
+            textos_legales_xml += f"<jerarquia_1_prioridad_local entidad='{entidad_especifica}'>\n" + "\n".join(textos_locales) + "\n</jerarquia_1_prioridad_local>\n"
+        if textos_sectoriales:
+            textos_legales_xml += f"<jerarquia_2_media_sectorial sector='{tipo_entidad}'>\n" + "\n".join(textos_sectoriales) + "\n</jerarquia_2_media_sectorial>\n"
+        if textos_nacionales:
+            textos_legales_xml += f"<jerarquia_3_base_nacional>\n" + "\n".join(textos_nacionales) + "\n</jerarquia_3_base_nacional>\n"
+        textos_legales_xml += "</marco_legal>"
         
+        # Mantener compatibilidad con el front-end
+        textos_legales_mostrar = textos_legales_xml
+
         if "{{Contexto_Legal_ChromaDB}}" in prompt_completo:
-            prompt_final = prompt_completo.replace("{{Contexto_Legal_ChromaDB}}", textos_legales)
+            prompt_final = prompt_completo.replace("{{Contexto_Legal_ChromaDB}}", textos_legales_xml)
         else:
-            prompt_final = f"{prompt_completo}\n\nCONTEXTO LEGAL ESTRICTO:\n{textos_legales}"
+            prompt_final = f"{prompt_completo}\n\nCONTEXTO LEGAL:\n{textos_legales_xml}"
             
-        instruccion_sistema = """
-        Eres un abogado experto en contratación pública en Ecuador. Redactas informes de necesidad.
-        Regla 1: Basa tu argumentación en el CONTEXTO LEGAL ESTRICTO provisto.
-        Regla 2: Si el contexto legal está vacío, redacta usando principios generales, sin inventar artículos.
-        Regla 3: Respeta la jerarquía de la ley (Nacional > Tipo de Entidad > Entidad Local).
-        Regla 4: NUNCA insertes advertencias de error en la redacción final.
+        instruccion_sistema = f"""
+        Eres un auditor jurídico estricto en contratación pública ecuatoriana.
+        Analiza el caso basándote EXCLUSIVAMENTE en el <marco_legal> proporcionado en formato XML.
+        
+        REGLAS DE RESOLUCIÓN DE CONFLICTOS Y JERARQUÍA:
+        1. PRIORIDAD ABSOLUTA: Las normas contenidas en <jerarquia_1_prioridad_local> PREVALECEN sobre todas las demás. Si hay contradicción, manda la regla local.
+        2. SUPLETORIEDAD: Las normas en <jerarquia_3_base_nacional> se usan como marco procedimental general. Si la normativa local no especifica algo, usa la nacional.
+        3. PROHIBICIÓN DE ALUCINACIÓN: Tienes estrictamente prohibido inventar números de artículos o incisos. Al justificar resoluciones o requerimientos técnicos, utiliza exactamente el contenido literal provisto (por ejemplo, el texto exacto de los artículos de la LOSNCP y su Reglamento General o las Ordenanzas Locales extraídas).
+        4. CITA DE ORIGEN: Cada vez que apliques una regla, debes citar explícitamente el atributo 'origen' de la etiqueta <documento>.
+        5. Si la base legal para resolver la solicitud del usuario no existe explícitamente en el <marco_legal>, NO asumas ni inventes nada. Debes responder textualmente: "Normativa insuficiente para emitir criterio".
         """
         
         prompt_gemini = f"INSTRUCCIONES DE SISTEMA:\n{instruccion_sistema}\n\nSOLICITUD DEL USUARIO:\n{prompt_final}"
 
-        # 2. REDACCIÓN Y RAZONAMIENTO (El Abogado - Gemini 2.5 Flash)
-        respuesta = gemini_model.generate_content(
+        # 2. REDACCIÓN Y RAZONAMIENTO (El Abogado - Gemini 1.5 Pro)
+        respuesta = gemini_model_pro.generate_content(
             prompt_gemini,
-            generation_config=genai.types.GenerationConfig(temperature=0.1)
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.0, # Temperatura 0 obligatoria para estricto apego legal
+                top_p=0.1
+            )
         )
         
         return JSONResponse(content={
             "argumentacion": respuesta.text.strip(),
             "archivos_consultados": resultados['metadatas'][0] if resultados.get('metadatas') else [],
-            "textos_crudos_chromadb": textos_legales
+            "textos_crudos_chromadb": textos_legales_mostrar
         })
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
