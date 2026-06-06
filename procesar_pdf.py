@@ -19,7 +19,7 @@ google_api_key = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=google_api_key)
 
 # Motor 1: Ultra rápido y económico para extraer metadatos iniciales
-gemini_model_flash = genai.GenerativeModel('gemini-2.5-flash')
+gemini_model_flash = genai.GenerativeModel('gemini-1.5-flash')
 # Motor 2: Nivel Dios en razonamiento para el análisis jurídico, acatamiento XML y prevención de alucinaciones
 gemini_model_pro = genai.GenerativeModel('gemini-1.5-flash')
 
