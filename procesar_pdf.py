@@ -24,8 +24,8 @@ genai.configure(api_key=google_api_key)
 
 # Corrección de Nomenclatura para evadir el Error 404
 # Actualizado a la nueva generación flash para garantizar velocidad y estabilidad
-gemini_model_flash = genai.GenerativeModel('models/gemini-2.0-flash')
-gemini_model_pro = genai.GenerativeModel('models/gemini-2.0-flash') 
+gemini_model_flash = genai.GenerativeModel('models/gemini-3.5-flash')
+gemini_model_pro = genai.GenerativeModel('models/gemini-3.5-flash') 
 
 # ==============================================================================
 # 3. RUTA DEL DISCO DURO (El Volumen de Railway)
