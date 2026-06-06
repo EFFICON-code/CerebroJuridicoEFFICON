@@ -10,20 +10,26 @@ import google.generativeai as genai
 
 load_dotenv()
 
+# ==============================================================================
 # 1. CONFIGURACIÓN OPENAI (El Bibliotecario Vectorial)
+# ==============================================================================
 openai_api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=openai_api_key)
 
+# ==============================================================================
 # 2. CONFIGURACIÓN GOOGLE GEMINI (Motor de Redacción)
+# ==============================================================================
 google_api_key = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=google_api_key)
 
-# Corrección de Nomenclatura para evadir el Error 404 (v1beta)
-# Usamos el prefijo 'models/' explícitamente. Usaremos Flash como motor unificado para garantizar estabilidad.
-gemini_model_flash = genai.GenerativeModel('models/gemini-1.5-flash')
-gemini_model_pro = genai.GenerativeModel('models/gemini-1.5-flash') 
+# Corrección de Nomenclatura para evadir el Error 404
+# Actualizado a la nueva generación flash para garantizar velocidad y estabilidad
+gemini_model_flash = genai.GenerativeModel('models/gemini-2.0-flash')
+gemini_model_pro = genai.GenerativeModel('models/gemini-2.0-flash') 
 
+# ==============================================================================
 # 3. RUTA DEL DISCO DURO (El Volumen de Railway)
+# ==============================================================================
 DB_PATH = "/app/chroma_db_juridico"
 
 app = FastAPI(title="Cerebro Jurídico EFFICON - Arquitectura Definitiva")
@@ -142,7 +148,7 @@ async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("Genera
         chunks = trocear_texto(texto_limpiado)
         
         db_client = chromadb.PersistentClient(path=DB_PATH)
-        # Usamos _v3 por si acaso para asegurar una tabla 100% limpia sin conflictos residuales
+        # Usamos _v3 para asegurar una tabla limpia sin conflictos residuales
         coleccion = db_client.get_or_create_collection(name="efficon_juridico_v3")
         
         metadatos_base = etiquetar_documento_maestro(texto_limpiado)
@@ -252,14 +258,14 @@ async def buscar(body: dict = Body(...)):
             prompt_final = f"{prompt_completo}\n\nCONTEXTO LEGAL:\n{textos_legales_xml}"
             
         instruccion_sistema = f"""
-        Eres un auditor jurídico estricto en contratación pública ecuatoriana.
+        Eres un auditor jurídico estricto en contratación pública ecuatoriana de PROESTRATEGIA.
         Analiza el caso basándote EXCLUSIVAMENTE en el <marco_legal> proporcionado en formato XML.
         
         REGLAS DE RESOLUCIÓN DE CONFLICTOS Y JERARQUÍA:
         1. PRIORIDAD ABSOLUTA: Las normas contenidas en <jerarquia_1_prioridad_local> PREVALECEN.
-        2. SUPLETORIEDAD: Las normas en <jerarquia_3_base_nacional> se usan como marco general.
-        3. PROHIBICIÓN DE ALUCINACIÓN: Prohibido inventar artículos. Utiliza exactamente el contenido literal provisto.
-        4. CITA DE ORIGEN: Cita explícitamente el atributo 'origen' de la etiqueta <documento>.
+        2. SUPLETORIEDAD: Las normas en <jerarquia_3_base_nacional> se usan como marco general, respetando estrictamente los Arts. 421-425 del marco normativo y del Reglamento General de la LOSNCP para justificaciones preparatorias.
+        3. PROHIBICIÓN DE ALUCINACIÓN: Prohibido inventar artículos. Utiliza exactamente el contenido literal provisto, sin agregar regulaciones inexistentes.
+        4. CITA DE ORIGEN: Cita explícitamente el atributo 'origen' de la etiqueta <documento> en cada aseveración.
         5. Si la base legal no existe explícitamente en el <marco_legal>, responde: "Normativa insuficiente para emitir criterio".
         """
         
