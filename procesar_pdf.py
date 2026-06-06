@@ -47,23 +47,52 @@ def limpiar_texto(texto):
     texto = re.sub(r'\s+', ' ', texto)
     return texto.strip()
 
-def trocear_texto(texto, tamano_max=1000):
-    # Nivel Dios: Chunking Semántico Legal
-    # Evita cortar artículos por la mitad separando estrictamente por párrafos reales
+def trocear_texto(texto, tamano_max=3000):
+    # Nivel Dios: Guillotina Recursiva y Segura para OpenAI
+    # tamano_max=3000 caracteres equivalen a ~800 tokens (Súper seguro, el límite es 8192)
+    
     parrafos = re.split(r'\n\n+', texto)
     chunks = []
     chunk_actual = ""
     
     for parrafo in parrafos:
-        if len(chunk_actual) + len(parrafo) < tamano_max:
-            chunk_actual += parrafo + "\n\n"
+        # PLAN B: Si un párrafo (o el documento entero por culpa de PyPDF2) es un monstruo gigante
+        if len(parrafo) > tamano_max:
+            # Lo partimos por puntos (oraciones) para no romper el sentido legal
+            oraciones = re.split(r'(?<=\.)\s+', parrafo)
+            for oracion in oraciones:
+                # PLAN C: Si incluso una "oración" es infinita (ej. una tabla sin puntos), la cortamos bruscamente
+                if len(oracion) > tamano_max:
+                    # Dividimos la oración gigante en tajos exactos de tamano_max
+                    pedazos = [oracion[i:i+tamano_max] for i in range(0, len(oracion), tamano_max)]
+                    for pedazo in pedazos:
+                        if len(chunk_actual) + len(pedazo) < tamano_max:
+                            chunk_actual += pedazo + " "
+                        else:
+                            if chunk_actual.strip():
+                                chunks.append(chunk_actual.strip())
+                            chunk_actual = pedazo + " "
+                    continue # Saltamos a la siguiente iteración
+
+                # Agrupación normal de oraciones seguras
+                if len(chunk_actual) + len(oracion) < tamano_max:
+                    chunk_actual += oracion + " "
+                else:
+                    if chunk_actual.strip():
+                        chunks.append(chunk_actual.strip())
+                    chunk_actual = oracion + " "
         else:
-            if chunk_actual.strip():
-                chunks.append(chunk_actual.strip())
-            chunk_actual = parrafo + "\n\n"
-            
+            # PLAN A: Comportamiento normal para párrafos bien formateados
+            if len(chunk_actual) + len(parrafo) < tamano_max:
+                chunk_actual += parrafo + "\n\n"
+            else:
+                if chunk_actual.strip():
+                    chunks.append(chunk_actual.strip())
+                chunk_actual = parrafo + "\n\n"
+                
     if chunk_actual.strip():
         chunks.append(chunk_actual.strip())
+        
     return chunks
 
 def etiquetar_documento_maestro(texto_inicial):
