@@ -10,27 +10,39 @@ import google.generativeai as genai
 
 load_dotenv()
 
-# 1. CONFIGURACIÓN OPENAI (Para la Búsqueda Matemática Vectorial)
+# 1. CONFIGURACIÓN OPENAI (El Bibliotecario Vectorial)
 openai_api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=openai_api_key)
 
-# 2. CONFIGURACIÓN GOOGLE GEMINI (Doble Motor)
+# 2. CONFIGURACIÓN GOOGLE GEMINI (Motor de Redacción)
 google_api_key = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=google_api_key)
 
-# Motor 1: Ultra rápido y económico para extraer metadatos iniciales
-gemini_model_flash = genai.GenerativeModel('gemini-1.5-flash')
-# Motor 2: Nivel Dios en razonamiento para el análisis jurídico, acatamiento XML y prevención de alucinaciones
-gemini_model_pro = genai.GenerativeModel('gemini-1.5-flash')
+# Corrección de Nomenclatura para evadir el Error 404 (v1beta)
+# Usamos el prefijo 'models/' explícitamente. Usaremos Flash como motor unificado para garantizar estabilidad.
+gemini_model_flash = genai.GenerativeModel('models/gemini-1.5-flash')
+gemini_model_pro = genai.GenerativeModel('models/gemini-1.5-flash') 
 
 # 3. RUTA DEL DISCO DURO (El Volumen de Railway)
 DB_PATH = "/app/chroma_db_juridico"
 
-app = FastAPI(title="Cerebro Jurídico EFFICON - Arquitectura XML Estricta")
+app = FastAPI(title="Cerebro Jurídico EFFICON - Arquitectura Definitiva")
 
 @app.get("/")
 async def root():
-    return {"mensaje": "Cerebro Jurídico EFFICON listo y blindado contra alucinaciones"}
+    return {"mensaje": "Cerebro Jurídico EFFICON operativo. Motores blindados."}
+
+@app.get("/debug_modelos")
+async def debug_modelos():
+    # Ruta secreta para auditar qué modelos te permite usar exactamente tu API Key
+    try:
+        lista = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                lista.append(m.name)
+        return {"modelos_disponibles": lista}
+    except Exception as e:
+        return {"error": str(e)}
 
 def leer_pdf(ruta_archivo):
     with open(ruta_archivo, 'rb') as archivo:
@@ -48,22 +60,16 @@ def limpiar_texto(texto):
     return texto.strip()
 
 def trocear_texto(texto, tamano_max=3000):
-    # Nivel Dios: Guillotina Recursiva y Segura para OpenAI
-    # tamano_max=3000 caracteres equivalen a ~800 tokens (Súper seguro, el límite es 8192)
-    
+    # Nivel Dios: Guillotina Recursiva Anti-Colapso OpenAI
     parrafos = re.split(r'\n\n+', texto)
     chunks = []
     chunk_actual = ""
     
     for parrafo in parrafos:
-        # PLAN B: Si un párrafo (o el documento entero por culpa de PyPDF2) es un monstruo gigante
         if len(parrafo) > tamano_max:
-            # Lo partimos por puntos (oraciones) para no romper el sentido legal
             oraciones = re.split(r'(?<=\.)\s+', parrafo)
             for oracion in oraciones:
-                # PLAN C: Si incluso una "oración" es infinita (ej. una tabla sin puntos), la cortamos bruscamente
                 if len(oracion) > tamano_max:
-                    # Dividimos la oración gigante en tajos exactos de tamano_max
                     pedazos = [oracion[i:i+tamano_max] for i in range(0, len(oracion), tamano_max)]
                     for pedazo in pedazos:
                         if len(chunk_actual) + len(pedazo) < tamano_max:
@@ -72,9 +78,7 @@ def trocear_texto(texto, tamano_max=3000):
                             if chunk_actual.strip():
                                 chunks.append(chunk_actual.strip())
                             chunk_actual = pedazo + " "
-                    continue # Saltamos a la siguiente iteración
-
-                # Agrupación normal de oraciones seguras
+                    continue
                 if len(chunk_actual) + len(oracion) < tamano_max:
                     chunk_actual += oracion + " "
                 else:
@@ -82,7 +86,6 @@ def trocear_texto(texto, tamano_max=3000):
                         chunks.append(chunk_actual.strip())
                     chunk_actual = oracion + " "
         else:
-            # PLAN A: Comportamiento normal para párrafos bien formateados
             if len(chunk_actual) + len(parrafo) < tamano_max:
                 chunk_actual += parrafo + "\n\n"
             else:
@@ -106,7 +109,6 @@ def etiquetar_documento_maestro(texto_inicial):
     Fragmento: {texto_inicial[:1500]}
     """
     try:
-        # Flash es perfecto para esta tarea simple de extracción
         respuesta = gemini_model_flash.generate_content(prompt)
         return parsear_etiquetas(respuesta.text.strip())
     except Exception:
@@ -137,12 +139,11 @@ async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("Genera
         
         texto_extraido = leer_pdf(ruta_temp)
         texto_limpiado = limpiar_texto(texto_extraido)
-        
-        # Uso del nuevo Chunking Semántico
         chunks = trocear_texto(texto_limpiado)
         
         db_client = chromadb.PersistentClient(path=DB_PATH)
-        coleccion = db_client.get_or_create_collection(name="efficon_juridico")
+        # Usamos _v3 por si acaso para asegurar una tabla 100% limpia sin conflictos residuales
+        coleccion = db_client.get_or_create_collection(name="efficon_juridico_v3")
         
         metadatos_base = etiquetar_documento_maestro(texto_limpiado)
         metadatos_base["entidad"] = entidad.strip().upper()
@@ -178,7 +179,7 @@ async def procesar_pdf(file: UploadFile = File(...), entidad: str = Form("Genera
 async def listar_documentos():
     try:
         db_client = chromadb.PersistentClient(path=DB_PATH)
-        coleccion = db_client.get_or_create_collection(name="efficon_juridico")
+        coleccion = db_client.get_or_create_collection(name="efficon_juridico_v3")
         resultados = coleccion.get(include=["metadatas"])
         
         lista_unica = set()
@@ -196,20 +197,16 @@ async def buscar(body: dict = Body(...)):
         prompt_completo = body.get("query", "")
         texto_busqueda = body.get("contexto_busqueda", prompt_completo) 
         
-        # --- CAPTURA DE VARIABLES (LAS 3 CAPAS) ---
         entidad_especifica = body.get("entidad", "").strip().upper()
         tipo_entidad = body.get("tipo_entidad", "").strip().upper()
         
-        # 1. BÚSQUEDA VECTORIAL (El Bibliotecario - OpenAI)
         embedding_pregunta = generar_embedding(texto_busqueda)
         db_client = chromadb.PersistentClient(path=DB_PATH)
-        coleccion = db_client.get_or_create_collection(name="efficon_juridico")
+        coleccion = db_client.get_or_create_collection(name="efficon_juridico_v3")
         
         lista_busqueda = ["NACIONAL"]
-        
         if tipo_entidad and tipo_entidad != "TODAS":
             lista_busqueda.append(tipo_entidad)
-            
         if entidad_especifica and entidad_especifica != "TODAS":
             lista_busqueda.append(entidad_especifica)
             
@@ -217,14 +214,10 @@ async def buscar(body: dict = Body(...)):
             
         resultados = coleccion.query(
             query_embeddings=[embedding_pregunta],
-            n_results=15, # Ampliado para capturar de las 3 gavetas con seguridad
+            n_results=15, 
             where=filtro
         )
         
-        cantidad = len(resultados['documents'][0]) if resultados and resultados['documents'] and resultados['documents'][0] else 0
-        print(f"🕵️ AUDITORÍA DE CHUNKS -> Gavetas abiertas: {lista_busqueda} | Chunks extraídos: {cantidad}")
-        
-        # --- ORDENAMIENTO JERÁRQUICO Y ESTRUCTURACIÓN XML ---
         textos_nacionales = []
         textos_sectoriales = []
         textos_locales = []
@@ -235,7 +228,6 @@ async def buscar(body: dict = Body(...)):
                 capa_origen = resultados['metadatas'][0][i].get('entidad', 'Desconocida')
                 texto_chunk = resultados['documents'][0][i]
                 
-                # Clasificamos el chunk en su respectiva gaveta virtual
                 if capa_origen == "NACIONAL":
                     textos_nacionales.append(f"<documento origen='{archivo}'>\n{texto_chunk}\n</documento>")
                 elif capa_origen == tipo_entidad:
@@ -243,7 +235,6 @@ async def buscar(body: dict = Body(...)):
                 else:
                     textos_locales.append(f"<documento origen='{archivo}'>\n{texto_chunk}\n</documento>")
 
-        # Ensamblamos el XML dando prioridad a la normativa de la entidad específica
         textos_legales_xml = "<marco_legal>\n"
         if textos_locales:
             textos_legales_xml += f"<jerarquia_1_prioridad_local entidad='{entidad_especifica}'>\n" + "\n".join(textos_locales) + "\n</jerarquia_1_prioridad_local>\n"
@@ -253,7 +244,6 @@ async def buscar(body: dict = Body(...)):
             textos_legales_xml += f"<jerarquia_3_base_nacional>\n" + "\n".join(textos_nacionales) + "\n</jerarquia_3_base_nacional>\n"
         textos_legales_xml += "</marco_legal>"
         
-        # Mantener compatibilidad con el front-end
         textos_legales_mostrar = textos_legales_xml
 
         if "{{Contexto_Legal_ChromaDB}}" in prompt_completo:
@@ -266,20 +256,19 @@ async def buscar(body: dict = Body(...)):
         Analiza el caso basándote EXCLUSIVAMENTE en el <marco_legal> proporcionado en formato XML.
         
         REGLAS DE RESOLUCIÓN DE CONFLICTOS Y JERARQUÍA:
-        1. PRIORIDAD ABSOLUTA: Las normas contenidas en <jerarquia_1_prioridad_local> PREVALECEN sobre todas las demás. Si hay contradicción, manda la regla local.
-        2. SUPLETORIEDAD: Las normas en <jerarquia_3_base_nacional> se usan como marco procedimental general. Si la normativa local no especifica algo, usa la nacional.
-        3. PROHIBICIÓN DE ALUCINACIÓN: Tienes estrictamente prohibido inventar números de artículos o incisos. Al justificar resoluciones o requerimientos técnicos, utiliza exactamente el contenido literal provisto (por ejemplo, el texto exacto de los artículos de la LOSNCP y su Reglamento General o las Ordenanzas Locales extraídas).
-        4. CITA DE ORIGEN: Cada vez que apliques una regla, debes citar explícitamente el atributo 'origen' de la etiqueta <documento>.
-        5. Si la base legal para resolver la solicitud del usuario no existe explícitamente en el <marco_legal>, NO asumas ni inventes nada. Debes responder textualmente: "Normativa insuficiente para emitir criterio".
+        1. PRIORIDAD ABSOLUTA: Las normas contenidas en <jerarquia_1_prioridad_local> PREVALECEN.
+        2. SUPLETORIEDAD: Las normas en <jerarquia_3_base_nacional> se usan como marco general.
+        3. PROHIBICIÓN DE ALUCINACIÓN: Prohibido inventar artículos. Utiliza exactamente el contenido literal provisto.
+        4. CITA DE ORIGEN: Cita explícitamente el atributo 'origen' de la etiqueta <documento>.
+        5. Si la base legal no existe explícitamente en el <marco_legal>, responde: "Normativa insuficiente para emitir criterio".
         """
         
         prompt_gemini = f"INSTRUCCIONES DE SISTEMA:\n{instruccion_sistema}\n\nSOLICITUD DEL USUARIO:\n{prompt_final}"
 
-        # 2. REDACCIÓN Y RAZONAMIENTO (El Abogado - Gemini 1.5 Pro)
         respuesta = gemini_model_pro.generate_content(
             prompt_gemini,
             generation_config=genai.types.GenerationConfig(
-                temperature=0.0, # Temperatura 0 obligatoria para estricto apego legal
+                temperature=0.0,
                 top_p=0.1
             )
         )
