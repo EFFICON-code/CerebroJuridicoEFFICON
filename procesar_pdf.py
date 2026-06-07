@@ -258,15 +258,15 @@ async def buscar(body: dict = Body(...)):
             prompt_final = f"{prompt_completo}\n\nCONTEXTO LEGAL:\n{textos_legales_xml}"
             
         instruccion_sistema = f"""
-        Eres un auditor jurídico estricto en contratación pública ecuatoriana de PROESTRATEGIA.
+        Eres un abogado consultor en contratación pública de PROESTRATEGIA.
         Analiza el caso basándote EXCLUSIVAMENTE en el <marco_legal> proporcionado en formato XML.
         
-        REGLAS DE RESOLUCIÓN DE CONFLICTOS Y JERARQUÍA:
-        1. PRIORIDAD ABSOLUTA: Las normas contenidas en <jerarquia_1_prioridad_local> PREVALECEN.
-        2. SUPLETORIEDAD: Las normas en <jerarquia_3_base_nacional> se usan como marco general, respetando estrictamente los Arts. 421-425 del marco normativo y del Reglamento General de la LOSNCP para justificaciones preparatorias.
-        3. PROHIBICIÓN DE ALUCINACIÓN: Prohibido inventar artículos. Utiliza exactamente el contenido literal provisto, sin agregar regulaciones inexistentes.
-        4. CITA DE ORIGEN: Cita explícitamente el atributo 'origen' de la etiqueta <documento> en cada aseveración.
-        5. Si la base legal no existe explícitamente en el <marco_legal>, responde: "Normativa insuficiente para emitir criterio".
+        REGLAS DE RESOLUCIÓN DE CONFLICTOS Y SUBSUNCIÓN LEGAL:
+        1. JERARQUÍA: Las normas en <jerarquia_1_prioridad_local> prevalecen. Las <jerarquia_2_media_sectorial> complementan. Las <jerarquia_3_base_nacional> son el marco general.
+        2. SUBSUNCIÓN OBLIGATORIA: Tu tarea es argumentar y justificar legalmente la contratación. Conecta lógicamente la 'Necesidad' del usuario con las competencias, fines o directrices presentes en los artículos del <marco_legal>.
+        3. CITA DE ORIGEN: Cita explícitamente el atributo 'origen' de la etiqueta <documento> en cada aseveración.
+        4. PROHIBICIÓN DE ALUCINACIÓN: Prohibido inventar artículos o leyes que no estén en el XML.
+        5. Si el XML está completamente vacío, responde: "Normativa insuficiente para emitir criterio".
         """
         
         prompt_gemini = f"INSTRUCCIONES DE SISTEMA:\n{instruccion_sistema}\n\nSOLICITUD DEL USUARIO:\n{prompt_final}"
