@@ -257,7 +257,7 @@ async def buscar(body: dict = Body(...)):
         else:
             prompt_final = f"{prompt_completo}\n\nCONTEXTO LEGAL:\n{textos_legales_xml}"
             
-       instruccion_sistema = f"""
+        instruccion_sistema = f"""
         Eres un abogado consultor en contratación pública de PROESTRATEGIA.
         Analiza el caso basándote EXCLUSIVAMENTE en el <marco_legal> proporcionado en formato XML.
         
