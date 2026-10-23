@@ -2,6 +2,7 @@ import PyPDF2
 import re
 from dotenv import load_dotenv
 import os
+import logging
 from openai import OpenAI
 import chromadb
 from fastapi import FastAPI, UploadFile, File, Form, Body
@@ -15,6 +16,8 @@ load_dotenv()
 # ==============================================================================
 openai_api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=openai_api_key)
+OPENAI_MODEL = "gpt-5.6-luna"
+logger = logging.getLogger(__name__)
 
 # ==============================================================================
 # 2. CONFIGURACIÓN GOOGLE GEMINI (Motor de Redacción)
@@ -271,16 +274,43 @@ async def buscar(body: dict = Body(...)):
         
         prompt_gemini = f"INSTRUCCIONES DE SISTEMA:\n{instruccion_sistema}\n\nSOLICITUD DEL USUARIO:\n{prompt_final}"
 
-        respuesta = gemini_model_pro.generate_content(
-            prompt_gemini,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.0,
-                top_p=0.1
+        proveedor = "gemini"
+        fallback = False
+        try:
+            respuesta = gemini_model_pro.generate_content(
+                prompt_gemini,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.0,
+                    top_p=0.1
+                ),
+                request_options={"timeout": 60}
             )
-        )
+            argumentacion = respuesta.text.strip()
+            if not argumentacion:
+                raise ValueError("Respuesta vacía de Gemini")
+        except Exception as error_gemini:
+            logger.warning("Gemini falló; activando OpenAI (%s)", type(error_gemini).__name__)
+            try:
+                respuesta_openai = client.with_options(timeout=120, max_retries=0).responses.create(
+                    model=OPENAI_MODEL,
+                    input=prompt_gemini
+                )
+                argumentacion = respuesta_openai.output_text.strip()
+                if respuesta_openai.status != "completed" or not argumentacion:
+                    raise ValueError("Respuesta incompleta o vacía de OpenAI")
+                proveedor = "openai"
+                fallback = True
+            except Exception as error_openai:
+                logger.error("OpenAI también falló (%s)", type(error_openai).__name__)
+                return JSONResponse(status_code=503, content={
+                    "error": "No fue posible completar el análisis jurídico con los proveedores de IA disponibles."
+                })
         
         return JSONResponse(content={
-            "argumentacion": respuesta.text.strip(),
+            "argumentacion": argumentacion,
+            "proveedor_ia": proveedor,
+            "fallback": fallback,
+            **({"motivo_fallback": "gemini_error"} if fallback else {}),
             "archivos_consultados": resultados['metadatas'][0] if resultados.get('metadatas') else [],
             "textos_crudos_chromadb": textos_legales_mostrar
         })
